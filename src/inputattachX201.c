@@ -145,7 +145,7 @@ int setup_serial(int fd) {
     uidev.absfuzz[ABS_Y] =    0;
     uidev.absmin[ABS_PRESSURE] =   0;
     uidev.absmax[ABS_PRESSURE] = 255;
-
+    
 
     // Write the created device info to uinput
     write(*uifd, &uidev, sizeof(uidev));
@@ -220,7 +220,7 @@ int isStartByte(unsigned char startByte){
 void decodePackage(unsigned char * buf,
 		   int* x       , int* y       ,
 		   int* pressure, int* touching,
-		   int* button1 , int* button2 ,
+		   int* button1 , int* hardpress ,
 		   int* rubber  , int* stylus   ) {
   
   *x = ((buf[1] & 0x7F) << 7) | (buf[2] & 0x7F);
@@ -228,14 +228,14 @@ void decodePackage(unsigned char * buf,
   
   
   *touching = (buf[0] & 0x01) ? 1 : 0;
-  *button1  = (buf[6] & 0x01) ? 1 : 0; // button 1 is the hard press to the screen
-  *button2  = (buf[0] & 0x02) ? 1 : 0;
+  *button1  = (buf[0] & 0x02) ? 1 : 0;
+  *hardpress  = (buf[6] & 0x01) ? 1 : 0; // button 2 is the hard press to the screen
   *rubber   = (buf[0] & 0x04) ? 1 : 0;
   *stylus   = (1 == *rubber)  ? 0 : 1;
 
   *pressure = buf[5];
-  if(1 == *button1) *pressure = *pressure + 127;
-  
+  if(1 == *hardpress) *pressure = *pressure + 127;
+
 }// end decodePackage
       
 
