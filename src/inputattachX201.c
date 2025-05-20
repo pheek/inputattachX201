@@ -1,6 +1,6 @@
 /**
  * date  : 2025 - 05 - 19
- * author: ph@freimann.eu Kthe pheek) + chatGPT (openai.com)
+ * author: ph@freimann.eu (the pheek) + chatGPT (openai.com)
  * license: gnu public license: https://www.gnu.org/licenses/#GPL
  *
  * inputattachX201
