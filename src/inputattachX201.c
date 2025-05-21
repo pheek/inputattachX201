@@ -148,10 +148,10 @@ int isStartByte(unsigned char startByte){
 /**
  * decode a package from the stylus
 
- Protocol (reverse engineered, missing meaning of parts of byte 6):
+Protocol (reverse engineered, missing meaning of parts of byte 6):
  
- Byte 0:
-	0x80 : pen connection lost
+Byte 0:
+	0x80 : pen connection lost (proximity)
 	0xA0 : stylus hover
 	0xA1 : stylus touch screen
 	0xA2 : button press
@@ -267,6 +267,32 @@ void mainloop(int serial, int uifd){
 
 
 /**
+ * open input and output device.
+ * serial: input stream from digitizer (wacom)
+ * uifd  : /dev/uinput file descriptor (= output)
+ */
+int openDevices(int * serial, int * uifd){
+	*serial = open(DEVICE_IN, O_RDONLY | O_NOCTTY);
+	if (*serial < 0) {
+		perror("open tty");
+		return 1;
+	}
+	if (setup_serial(*serial) != 0) return 1;
+	if (setup_uinput(uifd   ) != 0) return 1;
+	return 0;
+}
+
+/**
+ * Cleanup: close devices
+ */
+void cleanup(int serial, int uifd) {
+	ioctl(uifd, UI_DEV_DESTROY);
+	close(uifd);
+	close(serial);
+}// end cleanup()
+
+
+/**
  * main method for the service:
  *  1. open serial (to read bytes from)
  *  2. open uifd (/dev/uinput is actually the output here, but seeing from X11 its the input)
@@ -274,21 +300,13 @@ void mainloop(int serial, int uifd){
  *  4. cleanup
  */
 int main() {
-	int serial = open(DEVICE_IN, O_RDONLY | O_NOCTTY);
-	if (serial < 0) {
-		perror("open tty");
+	int serial, uifd;
+	if(0 < openDevices(&serial, &uifd)){
 		return 1;
 	}
-	if (setup_serial(serial) != 0) return 1;
-
-	int uifd;
-	if (setup_uinput(&uifd) != 0) return 1;
-
+	
 	mainloop(serial, uifd);
-
-	// cleanup
-	ioctl(uifd, UI_DEV_DESTROY);
-	close(uifd);
-	close(serial);
+	
+	cleanup(serial, uifd);
 	return 0;
 } // end main()
