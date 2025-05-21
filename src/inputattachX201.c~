@@ -125,7 +125,7 @@ void emit(int fd, int type, int code, int val) {
 	struct input_event ie;
 	ie.type  = type;
 	ie.code  = code;
-	ie.value = val ;
+	ie.value = val;
 	gettimeofday(&ie.time, NULL);
 	write(fd, &ie, sizeof(ie));
 }
@@ -182,12 +182,11 @@ void decodePackage(unsigned char * buf,
 
 	*touching  = (buf[0] & 0x01) ? 1 : 0;
 	*button1   = (buf[0] & 0x02) ? 1 : 0;
-	*hardpress = (buf[6] & 0x01) ? 1 : 0; // button pressed harder.
+	*hardpress = (buf[6] & 0x01) ? 1 : 0; // button 2 is the hard press to the screen
 	*rubber    = (buf[0] & 0x04) ? 1 : 0;
-	*stylus    = (1 ==  *rubber) ? 0 : 1; // rubber & stylus are exclusive
+	*stylus    = (1 ==  *rubber) ? 0 : 1; // rubber & 
 
 	if(   1 == *hardpress) {*pressure = *pressure + 127;}
-	//important:
 	if(0x80 == buf[0]    ) {*stylus = 0; *rubber = 0;   } // on proximity lost: remove tool
 }// end decodePackage
 
@@ -271,8 +270,6 @@ void mainloop(int serial, int uifd){
  * open input and output device.
  * serial: input stream from digitizer (wacom)
  * uifd  : /dev/uinput file descriptor (= output)
- *  1. open serial (to read bytes from)
- *  2. open uifd (/dev/uinput is actually the output here, but seeing from X11 its the input)
  */
 int openDevices(int * serial, int * uifd){
 	*serial = open(DEVICE_IN, O_RDONLY | O_NOCTTY);
@@ -297,9 +294,10 @@ void cleanup(int serial, int uifd) {
 
 /**
  * main method for the service:
- *  1. open input/output
- *  2. start mainloop (forever)
- *  3. cleanup
+ *  1. open serial (to read bytes from)
+ *  2. open uifd (/dev/uinput is actually the output here, but seeing from X11 its the input)
+ *  3. start mainloop
+ *  4. cleanup
  */
 int main() {
 	int serial, uifd;
