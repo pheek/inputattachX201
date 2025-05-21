@@ -1,11 +1,4 @@
 /**
-<<<<<<< HEAD
-=======
- * date  : 2025 - 05 - 19
- * author: ph@freimann.eu (the pheek) + chatGPT (openai.com)
- * license: gnu public license: https://www.gnu.org/licenses/#GPL
- *
->>>>>>> 3ab651f71e17b8d8a0035cbd60ae893782d4d55e
  * inputattachX201
  * ---------------
  *
