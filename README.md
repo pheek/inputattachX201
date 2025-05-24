@@ -27,7 +27,7 @@ At least, create a file called `/etc/xdg/autostart/inputattachX201.desktop` and 
 [Desktop Entry]
 Version=1.0
 Name=inputattachX201
-Exec=/usr/bin/inputattachX201
+Exec=/usr/local/bin/inputattachX201
 Terminal=false
 Type=Application
 StartupNotify=false
