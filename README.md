@@ -21,6 +21,8 @@ Run this, to use SETUID:
 `#chown root:root /usr/local/bin/inputattachX201`
 `#chmod 4755 /usr/local/bin/inputattachX201`
 
+Now, everybody should have the right to start inputattachX201
+
 At least, create a file called `/etc/xdg/autostart/inputattachX201.desktop` and fill with the following lines:
 
 ```

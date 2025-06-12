@@ -1,0 +1,7 @@
+[Desktop Entry]
+Version=1.0
+Name=inputattachX201
+Exec=/usr/local/bin/inputattachX201
+Terminal=false
+Type=Application
+StartupNotify=false

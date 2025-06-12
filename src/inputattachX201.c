@@ -132,7 +132,7 @@ void emit(int fd, int type, int code, int val) {
 
 
 /** Nr of bytes to read per chunk */
-#define NR_OF_BYTES  8 // byte Nr 7 und Nr 8 (8. and 9. byte are always 0)
+#define NR_OF_BYTES  8 // Bites 0..6 are meaningful. Byte 7, 8 and 9 is always 0 or could be start of next event?)
 
 
 /**
@@ -144,12 +144,28 @@ int isStartByte(unsigned char startByte){
 	return 0;
 }// end method isStartByte
 
+/**
+ * Event Structure
+ */
+struct WacomEventStructureX201 {
+	int x, y     ; /* position */
+	int pressure ;
+	int touching ;
+	int button   ;
+	int hardpress;
+	int rubber   ;
+	int stylus   ;
+}; // end wacom event structure
+
+/* Global place for actual Event data. */
+struct WacomEventStructureX201 gWE;
+
 
 /**
  * decode a package from the stylus
 
 Protocol (reverse engineered, missing meaning of parts of byte 6):
- 
+
 Byte 0:
 	0x80 : pen connection lost (proximity)
 	0xA0 : stylus hover
@@ -169,26 +185,22 @@ Byte 6   : bit0     : touching, but harder (tip + rubber)
 	bit7     : always 0
 Byte 7,8 : always 0
 */
-void decodePackage(unsigned char * buf,
-                   int* x       , int* y       ,
-                   int* pressure, int* touching,
-                   int* button1 , int* hardpress ,
-                   int* rubber  , int* stylus   ) {
+void decodePackage(unsigned char * buf) {
 
-	*x         = ((buf[1] & 0x7F) << 7) | (buf[2] & 0x7F);
-	*y         = ((buf[3] & 0x7F) << 7) | (buf[4] & 0x7F);
+	gWE.x         = ((buf[1] & 0x7F) << 7) | (buf[2] & 0x7F);
+	gWE.y         = ((buf[3] & 0x7F) << 7) | (buf[4] & 0x7F);
 
-	*pressure  = buf[5];
+	gWE.pressure  = buf[5];
 
-	*touching  = (buf[0] & 0x01) ? 1 : 0;
-	*button1   = (buf[0] & 0x02) ? 1 : 0;
-	*hardpress = (buf[6] & 0x01) ? 1 : 0; // button pressed harder.
-	*rubber    = (buf[0] & 0x04) ? 1 : 0;
-	*stylus    = (1 ==  *rubber) ? 0 : 1; // rubber & stylus are exclusive
+	gWE.touching  = (buf[0] & 0x01) ? 1 : 0;
+	gWE.button    = (buf[0] & 0x02) ? 1 : 0;
+	gWE.hardpress = (buf[6] & 0x01) ? 1 : 0; // button pressed harder.
+	gWE.rubber    = (buf[0] & 0x04) ? 1 : 0;
+	gWE.stylus    = (1 ==  gWE.rubber) ? 0 : 1; // rubber & stylus are exclusive
 
-	if(   1 == *hardpress) {*pressure = *pressure + 127;}
+	if(   1 == gWE.hardpress) {gWE.pressure = gWE.pressure + 127;}
 	//important:
-	if(0x80 == buf[0]    ) {*stylus = 0; *rubber = 0;   } // on proximity lost: remove tool
+	if(0x80 == buf[0]       ) {gWE.stylus = 0; gWE.rubber = 0;   } // on proximity lost: remove tool
 }// end decodePackage
 
 
@@ -199,18 +211,18 @@ void decodePackage(unsigned char * buf,
  * x, y     : coordinates
  * pressure : from 0 to 255
  */
-void emitEvents(int uifd, int stylus, int rubber, int button1, int hardpress, int x, int y, int pressure, int touching) {
+void emitEvents(int uifd) {
 
-	emit(uifd, EV_KEY, BTN_TOOL_PEN   , stylus      );
-	emit(uifd, EV_KEY, BTN_TOOL_RUBBER, rubber      );
+	emit(uifd, EV_KEY, BTN_TOOL_PEN   , gWE.stylus      );
+	emit(uifd, EV_KEY, BTN_TOOL_RUBBER, gWE.rubber      );
 
-	emit(uifd, EV_KEY, BTN_STYLUS     , button1     );
-	emit(uifd, EV_KEY, BTN_STYLUS2    , hardpress   ); // meaningful ??
-
-	emit(uifd, EV_ABS, ABS_X          , x           );
-	emit(uifd, EV_ABS, ABS_Y          , y           );
-	emit(uifd, EV_ABS, ABS_PRESSURE   , pressure    );
-	emit(uifd, EV_KEY, BTN_TOUCH      , touching    );
+	emit(uifd, EV_KEY, BTN_STYLUS     , gWE.button      );
+	emit(uifd, EV_KEY, BTN_STYLUS2    , gWE.hardpress   );
+	emit(uifd, EV_ABS, ABS_X          , gWE.x           );
+	emit(uifd, EV_ABS, ABS_Y          , gWE.y           );
+	emit(uifd, EV_ABS, ABS_PRESSURE   , gWE.pressure    );
+	emit(uifd, EV_KEY, BTN_TOUCH      , gWE.touching    );
+	/* Emit out: Event is finished */
 	emit(uifd, EV_SYN, SYN_REPORT     , 0           );
 }
 
@@ -246,28 +258,6 @@ void readWacomPackage(int serial, unsigned char * buf) {
 
 
 /**
- * Main loop: forever (until sigint):
- *   1. fetch byte stream
- *   2. decode
- *   3. emitEvents
- *
- * serial: input device id
- * uifd  : output device id (= input for X11)
- */
-void mainloop(int serial, int uifd){
-	unsigned char buf[NR_OF_BYTES + 1];
-	int x, y, pressure, touching, button1, hardpress, rubber, stylus;
-	while (running) {
-		readWacomPackage(serial, buf);
-
-		decodePackage(buf, &x, &y, &pressure, &touching, &button1, &hardpress, &rubber, &stylus);
-
-		emitEvents(uifd, stylus, rubber, button1, hardpress, x, y, pressure, touching);
-	} // end while "running"
-} // end mainloop()
-
-
-/**
  * open input and output device.
  * serial: input stream from digitizer (wacom)
  * uifd  : /dev/uinput file descriptor (= output)
@@ -284,6 +274,26 @@ int openDevices(int * serial, int * uifd){
 	if (setup_uinput(uifd   ) != 0) return 1;
 	return 0;
 }
+
+
+/**
+ * Main loop: forever (until sigint):
+ *   1. fetch byte stream
+ *   2. decode
+ *   3. emitEvents
+ *
+ * serial: input device id
+ * uifd  : output device id (= input for X11)
+ */
+void mainloop(int serial, int uifd){
+	unsigned char buf[NR_OF_BYTES + 1];
+	while (running) {
+		readWacomPackage(serial, buf);
+		decodePackage(buf);
+		emitEvents(uifd);
+	} // end while "running"
+} // end mainloop()
+
 
 /**
  * Cleanup: close devices
@@ -306,9 +316,9 @@ int main() {
 	if(0 < openDevices(&serial, &uifd)){
 		return 1;
 	}
-	
+
 	mainloop(serial, uifd);
-	
+
 	cleanup(serial, uifd);
 	return 0;
 } // end main()
