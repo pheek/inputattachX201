@@ -18,7 +18,9 @@ First I copied the compiled version to /usr/local/bin
 
 
 Run this, to use SETUID:
+
 `#chown root:root /usr/local/bin/inputattachX201`
+
 `#chmod 4755 /usr/local/bin/inputattachX201`
 
 Now, everybody should have the right to start inputattachX201
