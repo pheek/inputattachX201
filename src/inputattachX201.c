@@ -7,12 +7,13 @@
  * Adapted specifically for Lenovo ThinkPad X201 Tablet from the year 2005
  * [WACf004(?) on ttyS4].
  *
+ * This connects /dev/ttyS4 to /dev/uinput
+ *
  * date   : 2025 - 05 - 21
  * author : ph@freimann.eu (the pheek) + chatGPT (openai.com)
  *          cloned from Vojtech Pavlik
  * license: gnu public license: https://www.gnu.org/licenses/#GPL
  * src    : https://github.com/pheek/inputattachX201
- *
  */
 
 
@@ -100,14 +101,14 @@ int setup_uinput(int *uifd) {
 	ioctl(*uifd, UI_SET_ABSBIT, ABS_PRESSURE);
 
 	// set bounds
-	uidev.absmin [ABS_X] =    0;
-	uidev.absmax [ABS_X] = 6578;
-	uidev.absfuzz[ABS_X] =    0;
-	uidev.absmin [ABS_Y] =    0;
-	uidev.absmax [ABS_Y] = 4095;
-	uidev.absfuzz[ABS_Y] =    0;
-	uidev.absmin[ABS_PRESSURE] =   0;
-	uidev.absmax[ABS_PRESSURE] = 255;
+	uidev.absmin [ABS_X]       =    0;
+	uidev.absmax [ABS_X]       = 6578;
+	uidev.absfuzz[ABS_X]       =    0;
+	uidev.absmin [ABS_Y]       =    0;
+	uidev.absmax [ABS_Y]       = 4095;
+	uidev.absfuzz[ABS_Y]       =    0;
+	uidev.absmin[ABS_PRESSURE] =    0;
+	uidev.absmax[ABS_PRESSURE] =  255;
 
 	// Write the created device info to uinput
 	write(*uifd, &uidev, sizeof(uidev));
@@ -132,11 +133,11 @@ void emit(int fd, int type, int code, int val) {
 
 
 /** Nr of bytes to read per chunk */
-#define NR_OF_BYTES  8 // Bites 0..6 are meaningful. Byte 7, 8 and 9 is always 0 or could be start of next event?)
+#define NR_OF_BYTES  8 // Bites 0..6 are meaningful. Byte 7, 8 and 9 are always 0 or could this be the start of next event?)
 
 
 /**
- * check if the byte is the start of a pen chunk.
+ * check if the byte is the start of a wacom pen chunk.
  */
 int isStartByte(unsigned char startByte){
 	if(startByte >= 0xA0 && startByte <= 0xA5) return 1;
@@ -144,27 +145,27 @@ int isStartByte(unsigned char startByte){
 	return 0;
 }// end method isStartByte
 
+
 /**
  * Event Structure
  */
 struct WacomEventStructureX201 {
 	int x, y     ; /* position */
-	int pressure ;
-	int touching ;
+	int pressure ; /* value from 0..127, if "hardpress" is true, add 127 */
+	int touching ; 
 	int button   ;
 	int hardpress;
 	int rubber   ;
 	int stylus   ;
 }; // end wacom event structure
 
-/* Global place for actual Event data. */
-struct WacomEventStructureX201 gWE;
-
 
 /**
  * decode a package from the stylus
+ * Reads from the wacom buffer (7 relevant bytes) and fills
+ * the values of the stucture "WacomEventStructureX201".
 
-Protocol (reverse engineered, missing meaning of parts of byte 6):
+Protocol (reverse engineered, missing meaning of parts of buf[6] (= 7th byte):
 
 Byte 0:
 	0x80 : pen connection lost (proximity)
@@ -185,22 +186,22 @@ Byte 6   : bit0     : touching, but harder (tip + rubber)
 	bit7     : always 0
 Byte 7,8 : always 0
 */
-void decodePackage(unsigned char * buf) {
+void decodePackage(unsigned char * buf, struct WacomEventStructureX201 *gWE) {
 
-	gWE.x         = ((buf[1] & 0x7F) << 7) | (buf[2] & 0x7F);
-	gWE.y         = ((buf[3] & 0x7F) << 7) | (buf[4] & 0x7F);
+	gWE->x         = ((buf[1] & 0x7F) << 7) | (buf[2] & 0x7F);
+	gWE->y         = ((buf[3] & 0x7F) << 7) | (buf[4] & 0x7F);
 
-	gWE.pressure  = buf[5];
+	gWE->pressure  = buf[5];
 
-	gWE.touching  = (buf[0] & 0x01) ? 1 : 0;
-	gWE.button    = (buf[0] & 0x02) ? 1 : 0;
-	gWE.hardpress = (buf[6] & 0x01) ? 1 : 0; // button pressed harder.
-	gWE.rubber    = (buf[0] & 0x04) ? 1 : 0;
-	gWE.stylus    = (1 ==  gWE.rubber) ? 0 : 1; // rubber & stylus are exclusive
+	gWE->touching  = (buf[0] & 0x01)    ? 1 : 0;
+	gWE->button    = (buf[0] & 0x02)    ? 1 : 0;
+	gWE->hardpress = (buf[6] & 0x01)    ? 1 : 0; // button pressed harder.
+	gWE->rubber    = (buf[0] & 0x04)    ? 1 : 0;
+	gWE->stylus    = (1 == gWE->rubber) ? 0 : 1; // rubber & stylus are exclusive
 
-	if(   1 == gWE.hardpress) {gWE.pressure = gWE.pressure + 127;}
+	if(   1 == gWE->hardpress) {gWE->pressure = gWE->pressure + 128;}
 	//important:
-	if(0x80 == buf[0]       ) {gWE.stylus = 0; gWE.rubber = 0;   } // on proximity lost: remove tool
+	if(0x80 == buf[0]       ) {gWE->stylus = 0; gWE->rubber = 0;   } // on proximity lost: remove tool
 }// end decodePackage
 
 
@@ -211,19 +212,19 @@ void decodePackage(unsigned char * buf) {
  * x, y     : coordinates
  * pressure : from 0 to 255
  */
-void emitEvents(int uifd) {
+void emitEvents(int uifd, struct WacomEventStructureX201 *gWE) {
 
-	emit(uifd, EV_KEY, BTN_TOOL_PEN   , gWE.stylus      );
-	emit(uifd, EV_KEY, BTN_TOOL_RUBBER, gWE.rubber      );
+	emit(uifd, EV_ABS, ABS_X          , gWE->x         );
+	emit(uifd, EV_ABS, ABS_Y          , gWE->y         );
+	emit(uifd, EV_KEY, BTN_TOOL_PEN   , gWE->stylus    );
+	emit(uifd, EV_KEY, BTN_TOOL_RUBBER, gWE->rubber    );
+	emit(uifd, EV_KEY, BTN_STYLUS     , gWE->button    );
+	emit(uifd, EV_KEY, BTN_STYLUS2    , gWE->hardpress );
+	emit(uifd, EV_ABS, ABS_PRESSURE   , gWE->pressure  );
+	emit(uifd, EV_KEY, BTN_TOUCH      , gWE->touching  );
 
-	emit(uifd, EV_KEY, BTN_STYLUS     , gWE.button      );
-	emit(uifd, EV_KEY, BTN_STYLUS2    , gWE.hardpress   );
-	emit(uifd, EV_ABS, ABS_X          , gWE.x           );
-	emit(uifd, EV_ABS, ABS_Y          , gWE.y           );
-	emit(uifd, EV_ABS, ABS_PRESSURE   , gWE.pressure    );
-	emit(uifd, EV_KEY, BTN_TOUCH      , gWE.touching    );
 	/* Emit out: Event is finished */
-	emit(uifd, EV_SYN, SYN_REPORT     , 0           );
+	emit(uifd, EV_SYN, SYN_REPORT     , 0              );
 }
 
 
@@ -286,11 +287,12 @@ int openDevices(int * serial, int * uifd){
  * uifd  : output device id (= input for X11)
  */
 void mainloop(int serial, int uifd){
+	struct WacomEventStructureX201 gWE;
 	unsigned char buf[NR_OF_BYTES + 1];
 	while (running) {
 		readWacomPackage(serial, buf);
-		decodePackage(buf);
-		emitEvents(uifd);
+		decodePackage(buf, &gWE);
+		emitEvents(uifd, &gWE);
 	} // end while "running"
 } // end mainloop()
 
